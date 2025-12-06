@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate, useLocation } from "react-router-dom";
-import { supabase } from "../supabase";
 
 const LoginPage = () => {
   const { login, register } = useAuth();
@@ -26,23 +25,10 @@ const LoginPage = () => {
     try {
       if (isLogin) {
         // ----- LOGIN -----
-        // Kiểm tra xem có phải admin không
-        const isAdmin = await checkIfAdmin(formData.email);
-        
-        // Chỉ kiểm tra email tồn tại nếu KHÔNG phải admin
-        if (!isAdmin) {
-          const emailExists = await checkEmailExists(formData.email);
-          
-          if (!emailExists) {
-            setError("Email này chưa được đăng ký. Vui lòng đăng ký tài khoản trước.");
-            setLoading(false);
-            return;
-          }
-        }
-
         const result = await login(formData.email, formData.password);
+        
         if (result.success) {
-          // Redirect đến trang được yêu cầu hoặc trang chủ
+          console.log("✅ Login successful, navigating...");
           const from = location.state?.from?.pathname || "/";
           navigate(from, { replace: true });
         } else {
@@ -50,7 +36,7 @@ const LoginPage = () => {
         }
       } else {
         // ----- REGISTER -----
-        // VALIDATION
+        // Validation
         if (!formData.name.trim()) {
           setError("Vui lòng nhập họ và tên");
           setLoading(false);
@@ -69,14 +55,6 @@ const LoginPage = () => {
           return;
         }
 
-        // Kiểm tra email đã tồn tại chưa
-        const emailExists = await checkEmailExists(formData.email);
-        if (emailExists) {
-          setError("Email này đã được đăng ký. Vui lòng đăng nhập.");
-          setLoading(false);
-          return;
-        }
-
         const result = await register(
           formData.email,
           formData.password,
@@ -86,7 +64,6 @@ const LoginPage = () => {
         if (result.success) {
           setError("");
           alert("Đăng ký thành công! Vui lòng đăng nhập.");
-          // Reset form và chuyển sang chế độ đăng nhập
           setFormData({
             name: "",
             email: "",
@@ -106,61 +83,10 @@ const LoginPage = () => {
     }
   };
 
-  // ✅ Hàm kiểm tra xem có phải admin không
-  const checkIfAdmin = async (email) => {
-    try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("email", email)
-        .single();
-
-      if (error) {
-        console.error("Lỗi kiểm tra admin:", error);
-        return false;
-      }
-
-      console.log("✅ Kiểm tra admin:", data?.role);
-      return data?.role === "admin";
-    } catch (error) {
-      console.error("Exception kiểm tra admin:", error);
-      return false;
-    }
-  };
-
-  // ✅ Hàm kiểm tra email có tồn tại không
-  const checkEmailExists = async (email) => {
-    try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("email", email)
-        .single();
-
-      // PGRST116 = No rows returned (email chưa tồn tại)
-      if (error && error.code === "PGRST116") {
-        return false;
-      }
-
-      if (error) {
-        console.error("Lỗi kiểm tra email:", error);
-        return false;
-      }
-
-      console.log("✅ Email tồn tại:", !!data);
-      return !!data;
-    } catch (error) {
-      console.error("Exception kiểm tra email:", error);
-      return false;
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-100 via-rose-50 to-pink-50 flex items-center justify-center px-4 py-16">
       <div className="max-w-md w-full">
-        {/* Main Card */}
         <div className="bg-white/90 backdrop-blur-sm rounded-3xl shadow-2xl shadow-pink-200/50 p-8 border border-pink-100">
-          {/* Header */}
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-pink-200 to-rose-200 rounded-full mb-4">
               <svg className="w-8 h-8 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -175,7 +101,6 @@ const LoginPage = () => {
             </p>
           </div>
 
-          {/* Error Alert */}
           {error && (
             <div className="bg-rose-50 border-l-4 border-rose-400 text-rose-700 px-4 py-3 rounded-lg mb-6 animate-shake">
               <div className="flex items-start">
@@ -187,7 +112,6 @@ const LoginPage = () => {
             </div>
           )}
 
-          {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
             {!isLogin && (
               <div>
@@ -316,7 +240,6 @@ const LoginPage = () => {
             </button>
           </form>
 
-          {/* Toggle Button */}
           <div className="mt-8 text-center">
             <button
               onClick={() => {
@@ -339,7 +262,6 @@ const LoginPage = () => {
           </div>
         </div>
 
-        {/* Footer */}
         <div className="mt-6 text-center">
           <p className="text-gray-500 text-sm">
             Bằng việc đăng nhập/đăng ký, bạn đồng ý với{" "}
@@ -350,7 +272,6 @@ const LoginPage = () => {
           </p>
         </div>
 
-        {/* Decorative Elements */}
         <div className="absolute top-20 left-10 w-20 h-20 bg-pink-200/30 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute bottom-20 right-10 w-32 h-32 bg-rose-200/30 rounded-full blur-3xl animate-pulse delay-1000"></div>
       </div>

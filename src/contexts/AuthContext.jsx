@@ -8,136 +8,58 @@ export const AuthProvider = ({ children }) => {
   const [role, setRole] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Fetch user role from profiles table
-  const fetchUserRole = async (userId) => {
-    try {
-      console.log('🔍 Fetching role for user:', userId);
-      
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', userId)
-        .single();
-
-      if (error) {
-        console.error('❌ Error fetching role:', error);
-        
-        // ✅ Nếu profile chưa tồn tại, tạo mới với role mặc định
-        if (error.code === 'PGRST116') { // Row not found
-          console.log('📝 Creating new profile for user:', userId);
-          const { data: userData } = await supabase.auth.getUser();
-          
-          const { error: insertError } = await supabase
-            .from('profiles')
-            .insert([
-              {
-                id: userId,
-                email: userData?.user?.email,
-                role: 'user',
-              },
-            ]);
-
-          if (insertError) {
-            console.error('❌ Error creating profile:', insertError);
-          } else {
-            console.log('✅ Profile created with role: user');
-            setRole('user');
-            return;
-          }
-        }
-        
-        setRole('user');
-        return;
-      }
-
-      console.log('✅ Role fetched successfully:', data?.role);
-      setRole(data?.role || 'user');
-    } catch (error) {
-      console.error('❌ Exception in fetchUserRole:', error);
-      setRole('user');
-    }
-  };
-
-  // Check user session on mount
+  // Check user session on mount from localStorage
   useEffect(() => {
-    let isMounted = true;
+    console.log('🚀 Initializing auth from localStorage...');
     
-    const initAuth = async () => {
-      try {
-        console.log('🚀 Initializing auth...');
-        const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (error) {
-          console.error('❌ Error getting session:', error);
-        }
-        
-        if (!isMounted) return;
-        
-        if (session?.user) {
-          console.log('👤 User session found:', session.user.email);
-          setUser(session.user);
-          await fetchUserRole(session.user.id);
-        } else {
-          console.log('👤 No user session');
-          setUser(null);
-          setRole(null);
-        }
-      } catch (error) {
-        console.error('❌ Error in initAuth:', error);
-      } finally {
-        if (isMounted) {
-          console.log('✅ Auth initialization complete');
-          setLoading(false);
-        }
+    try {
+      const savedUser = localStorage.getItem('user');
+      if (savedUser) {
+        const userData = JSON.parse(savedUser);
+        console.log('✅ User found in localStorage:', userData.email);
+        setUser(userData);
+        setRole(userData.role);
+      } else {
+        console.log('👤 No user in localStorage');
       }
-    };
-
-    initAuth();
-
-    // Setup auth listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('🔔 Auth event:', event);
-        
-        if (!isMounted) return;
-        
-        if (session?.user) {
-          console.log('👤 User logged in:', session.user.email);
-          setUser(session.user);
-          
-          // Fetch role on sign in or token refresh
-          if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-            await fetchUserRole(session.user.id);
-          }
-        } else {
-          console.log('👤 User logged out');
-          setUser(null);
-          setRole(null);
-        }
-      }
-    );
-
-    return () => {
-      isMounted = false;
-      subscription.unsubscribe();
-    };
+    } catch (error) {
+      console.error('❌ Error loading user from localStorage:', error);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  // Login function
+  // Login function - Query from users table
   const login = async (email, password) => {
     try {
       console.log('🔐 Attempting login for:', email);
       
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      // Query from users table
+      const { data: userData, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', email.toLowerCase().trim())
+        .eq('password', password) // ⚠️ Plain text comparison
+        .maybeSingle();
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Login query error:', error);
+        throw new Error('Đã có lỗi xảy ra. Vui lòng thử lại.');
+      }
 
-      console.log('✅ Login successful');
-      // Auth listener will handle setting user and fetching role
-      return { success: true, user: data.user };
+      if (!userData) {
+        console.log('❌ Invalid credentials');
+        throw new Error('Email hoặc mật khẩu không đúng');
+      }
+
+      console.log('✅ Login successful:', userData.email);
+      
+      // Save user to state and localStorage
+      setUser(userData);
+      setRole(userData.role);
+      localStorage.setItem('user', JSON.stringify(userData));
+
+      return { success: true, user: userData };
     } catch (error) {
       console.error('❌ Login error:', error);
       return { success: false, error: error.message };
@@ -149,63 +71,74 @@ export const AuthProvider = ({ children }) => {
     try {
       console.log('🚪 Logging out...');
       
-      // ✅ Clear state trước khi sign out
+      // Clear state and localStorage
       setUser(null);
       setRole(null);
-      
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        console.error('❌ Logout error:', error);
-        throw error;
-      }
+      localStorage.removeItem('user');
       
       console.log('✅ Logout successful');
       return { success: true };
     } catch (error) {
       console.error('❌ Logout error:', error);
-      // ✅ Vẫn clear state ngay cả khi có lỗi
-      setUser(null);
-      setRole(null);
       return { success: false, error: error.message };
     }
   };
 
-  // Register function
-  const register = async (email, password) => {
+  // Register function - Insert into users table
+  const register = async (email, password, name) => {
     try {
       console.log('📝 Attempting registration for:', email);
       
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-      });
+      // Check if email already exists
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', email.toLowerCase().trim())
+        .maybeSingle();
 
-      if (signUpError) throw signUpError;
-
-      if (!authData.user) {
-        throw new Error('User creation failed');
+      if (existingUser) {
+        throw new Error('Email này đã được đăng ký');
       }
 
-      console.log('✅ User created:', authData.user.id);
+      // Insert new user into users table
+      const { data: newUser, error: insertError } = await supabase
+        .from('users')
+        .insert([
+          {
+            email: email.toLowerCase().trim(),
+            password: password, // ⚠️ Should be hashed in production
+            role: 'user',
+          },
+        ])
+        .select()
+        .single();
 
-      // Create user profile
-      const { error: insertError } = await supabase
+      if (insertError) {
+        console.error('❌ Error creating user:', insertError);
+        throw new Error('Không thể tạo tài khoản. Vui lòng thử lại.');
+      }
+
+      console.log('✅ User created:', newUser.id);
+
+      // Create profile
+      const { error: profileError } = await supabase
         .from('profiles')
         .insert([
           {
-            id: authData.user.id,
+            id: newUser.id,
+            email: email.toLowerCase().trim(),
+            name: name.trim(),
             role: 'user',
-            email: authData.user.email,
           },
         ]);
 
-      if (insertError) {
-        console.error('❌ Error creating profile:', insertError);
-        throw insertError;
+      if (profileError) {
+        console.error('⚠️ Error creating profile (non-critical):', profileError);
+        // Don't throw - profile is optional
       }
 
-      console.log('✅ Profile created successfully');
-      return { success: true, user: authData.user };
+      console.log('✅ Registration successful');
+      return { success: true, user: newUser };
     } catch (error) {
       console.error('❌ Register error:', error);
       return { success: false, error: error.message };
@@ -219,7 +152,6 @@ export const AuthProvider = ({ children }) => {
     login,
     logout,
     register,
-    fetchUserRole,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
